@@ -7,8 +7,10 @@ import json
 import logging
 import os
 import re
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import dpath
 from azure.core.credentials import TokenCredential
@@ -24,6 +26,23 @@ from fabric_cicd._common._logging import print_header
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class PublishLogEntry:
+    name: str
+    item_type: str
+    success: bool
+    error: Optional[str]
+    start_time: datetime
+    end_time: datetime
+
+    def to_dict(self):
+        d = asdict(self)
+        # convert datetimes to ISO strings for JSON friendliness
+        d["start_time"] = self.start_time.isoformat()
+        d["end_time"] = self.end_time.isoformat()
+        return d
+
+
 class FabricWorkspace:
     """A class to manage and publish workspace items to the Fabric API."""
 
@@ -31,6 +50,7 @@ class FabricWorkspace:
         self,
         repository_directory: str,
         item_type_in_scope: list[str],
+        items_to_include: Optional[list[str]] = None,
         environment: str = "N/A",
         workspace_id: Optional[str] = None,
         workspace_name: Optional[str] = None,
@@ -45,6 +65,7 @@ class FabricWorkspace:
             workspace_name: The name of the workspace to interact with. Either `workspace_id` or `workspace_name` must be provided. Considers only `workspace_id` if both are specified.
             repository_directory: Local directory path of the repository where items are to be deployed from.
             item_type_in_scope: Item types that should be deployed for a given workspace.
+            items_to_include: Optional List of items to be published
             environment: The environment to be used for parameterization.
             token_credential: The token credential to use for API requests.
             kwargs: Additional keyword arguments.
@@ -121,12 +142,14 @@ class FabricWorkspace:
         # Validate and set class variables
         self.repository_directory: Path = validate_repository_directory(repository_directory)
         self.item_type_in_scope = validate_item_type_in_scope(item_type_in_scope, upn_auth=self.endpoint.upn_auth)
+        self.items_to_include = items_to_include
         self.environment = validate_environment(environment)
         self.publish_item_name_exclude_regex = None
         self.repository_folders = {}
         self.repository_items = {}
         self.deployed_folders = {}
         self.deployed_items = {}
+        self.publish_log_entries: List[PublishLogEntry] = []
 
         # temporarily support base_api_url until deprecated
         if "base_api_url" in kwargs:
@@ -431,6 +454,26 @@ class FabricWorkspace:
                 logger.info(f"Skipping publishing of {item_type} '{item_name}' due to exclusion regex.")
                 return
 
+        # Debug logging for items_to_include
+        if self.items_to_include is not None:
+            current_item = f"{item_name}.{item_type}"
+            logger.debug(f"Checking if '{current_item}' is in items_to_include: {self.items_to_include}")
+
+            # Check for exact match or case-insensitive match
+            match_found = any(
+                current_item == include_item or current_item.lower() == include_item.lower()
+                for include_item in self.items_to_include
+            )
+
+            if not match_found:
+                item.skip_publish = True
+                logger.info(f"Skipping publishing {item_name}.{item_type} as it is not in the items to include list.")
+                logger.info(f"Include list: {self.items_to_include}")
+                return
+            logger.info(f"Publishing {item_name}.{item_type} as it is in the items to include list.")
+        else:
+            logger.info(f"Publishing {item_name}.{item_type} as no items to include list is provided.")
+
         item_guid = item.guid
         item_files = item.item_files
 
@@ -515,6 +558,18 @@ class FabricWorkspace:
         # skip_publish_logging provided in kwargs to suppress logging if further processing is to be done
         if not kwargs.get("skip_publish_logging", False):
             logger.info(f"{constants.INDENT}Published")
+
+        self.publish_log_entries.append(
+            PublishLogEntry(
+                name=item_name,
+                item_type=item_type,
+                success=True,
+                error=None,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+            )
+        )
+
         return
 
     def _unpublish_item(self, item_name: str, item_type: str) -> None:
