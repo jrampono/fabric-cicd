@@ -10,7 +10,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import dpath
 from azure.core.credentials import TokenCredential
@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PublishLogEntry:
+    """Dataclass to represent a log entry for published items."""
+
     name: str
     item_type: str
     success: bool
@@ -35,7 +37,8 @@ class PublishLogEntry:
     start_time: datetime
     end_time: datetime
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
+        """Convert the PublishLogEntry to a dictionary."""
         d = asdict(self)
         # convert datetimes to ISO strings for JSON friendliness
         d["start_time"] = self.start_time.isoformat()
@@ -149,7 +152,7 @@ class FabricWorkspace:
         self.repository_items = {}
         self.deployed_folders = {}
         self.deployed_items = {}
-        self.publish_log_entries: List[PublishLogEntry] = []
+        self.publish_log_entries: list[PublishLogEntry] = []
 
         # temporarily support base_api_url until deprecated
         if "base_api_url" in kwargs:
