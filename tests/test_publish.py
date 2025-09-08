@@ -432,3 +432,136 @@ def test_mirrored_database_published_before_lakehouse(mock_endpoint):
             assert mirrored_db_index < lakehouse_index, (
                 f"MirroredDatabase should be published before Lakehouse, but got order: {call_order}"
             )
+
+
+def test_publish_all_items_return_behavior_with_feature_flag(mock_endpoint):
+    """Test that publish_all_items returns publish log entries when feature flag is enabled."""
+    import json
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import patch
+
+    import fabric_cicd.constants as constants
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create a simple notebook
+        notebook_dir = temp_path / "TestNotebook.Notebook"
+        notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        platform_file = notebook_dir / ".platform"
+        metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "Test Notebook",
+                "description": "Test notebook",
+            },
+            "config": {"logicalId": "test-notebook-id"},
+        }
+
+        with platform_file.open("w", encoding="utf-8") as f:
+            json.dump(metadata, f)
+
+        with (notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        # Enable the return publish log feature flag
+        original_flags = constants.FEATURE_FLAG.copy()
+        constants.FEATURE_FLAG.add("enable_return_publish_log")
+
+        try:
+            with (
+                patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+                patch.object(
+                    FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})
+                ),
+                patch.object(
+                    FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+                ),
+                patch("fabric_cicd._items.publish_notebooks") as mock_publish_notebooks,
+            ):
+                workspace = FabricWorkspace(
+                    workspace_id="12345678-1234-5678-abcd-1234567890ab",
+                    repository_directory=str(temp_path),
+                    item_type_in_scope=["Notebook"],
+                )
+
+                # Call publish_all_items with feature flag enabled
+                result = publish.publish_all_items(workspace)
+
+                # Verify that the function returns the publish log entries
+                assert result is not None
+                assert result == workspace.publish_log_entries
+                mock_publish_notebooks.assert_called_once_with(workspace)
+
+        finally:
+            # Restore original feature flags
+            constants.FEATURE_FLAG.clear()
+            constants.FEATURE_FLAG.update(original_flags)
+
+
+def test_publish_all_items_return_behavior_without_feature_flag(mock_endpoint):
+    """Test that publish_all_items returns None when feature flag is not enabled."""
+    import json
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import patch
+
+    import fabric_cicd.constants as constants
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create a simple notebook
+        notebook_dir = temp_path / "TestNotebook.Notebook"
+        notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        platform_file = notebook_dir / ".platform"
+        metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "Test Notebook",
+                "description": "Test notebook",
+            },
+            "config": {"logicalId": "test-notebook-id"},
+        }
+
+        with platform_file.open("w", encoding="utf-8") as f:
+            json.dump(metadata, f)
+
+        with (notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        # Ensure the feature flag is NOT enabled
+        original_flags = constants.FEATURE_FLAG.copy()
+        constants.FEATURE_FLAG.discard("enable_return_publish_log")
+
+        try:
+            with (
+                patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+                patch.object(
+                    FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})
+                ),
+                patch.object(
+                    FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+                ),
+                patch("fabric_cicd._items.publish_notebooks") as mock_publish_notebooks,
+            ):
+                workspace = FabricWorkspace(
+                    workspace_id="12345678-1234-5678-abcd-1234567890ab",
+                    repository_directory=str(temp_path),
+                    item_type_in_scope=["Notebook"],
+                )
+
+                # Call publish_all_items without feature flag enabled
+                result = publish.publish_all_items(workspace)
+
+                # Verify that the function returns None (maintains backwards compatibility)
+                assert result is None
+                mock_publish_notebooks.assert_called_once_with(workspace)
+
+        finally:
+            # Restore original feature flags
+            constants.FEATURE_FLAG.clear()
+            constants.FEATURE_FLAG.update(original_flags)

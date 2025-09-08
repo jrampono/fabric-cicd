@@ -468,7 +468,7 @@ class FabricWorkspace:
             **kwargs: Additional keyword arguments.
         """
         item = self.repository_items[item_type][item_name]
-        
+
         # Capture start time for structured logging
         start_time = datetime.now()
         error_message = None
@@ -586,7 +586,7 @@ class FabricWorkspace:
                 error=error_message,
                 start_time=start_time,
                 end_time=end_time,
-                guid=item_guid
+                guid=item_guid,
             )
         )
         return

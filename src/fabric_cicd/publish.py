@@ -25,7 +25,7 @@ def publish_all_items(
     fabric_workspace_obj: FabricWorkspace,
     item_name_exclude_regex: Optional[str] = None,
     items_to_include: Optional[list[str]] = None,
-) -> None:
+) -> Optional[list]:
     """
     Publishes all items defined in the `item_type_in_scope` list of the given FabricWorkspace object.
 
@@ -34,6 +34,9 @@ def publish_all_items(
         item_name_exclude_regex: Regex pattern to exclude specific items from being published.
         items_to_include: List of items in the format "item_name.item_type" that should be published.
 
+    Returns:
+        Optional[list]: Returns publish log entries if 'enable_return_publish_log' feature flag is enabled,
+        otherwise returns None.
 
     items_to_include:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
@@ -184,8 +187,10 @@ def publish_all_items(
     if _should_publish_item_type("Environment"):
         print_header("Checking Environment Publish State")
         items.check_environment_publish_state(fabric_workspace_obj)
-    
-    return fabric_workspace_obj.publish_log_entries
+
+    if "enable_return_publish_log" in constants.FEATURE_FLAG:
+        return fabric_workspace_obj.publish_log_entries
+    return None
 
 
 def unpublish_all_orphan_items(
